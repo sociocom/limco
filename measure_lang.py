@@ -12,20 +12,22 @@ import numpy as np
 Num = Union[int, float]
 
 # TODO: efficiency
-# preprocess mecab tokenisation first
+# preprocess mecab tokenisation first for library usage
 
+# TODO: make these resources assignable by the user
+# TODO: make these resources optional
 # DELIM_SENT = re.compile(r"(?:[。？！\?\!]+|[。？！\?\!]?[」』])")  # FIXME: 文じゃないカギカッコが取れちゃう
 NM = MeCab()  # NOTE: assume IPADIC
 NMN = MeCab("-d /usr/local/lib/mecab/dic/mecab-ipadic-neologd")
-with open(os.path.join(os.path.dirname(__file__), "stopwords_jp.txt"), "r") as f:
+with open(os.path.join(os.path.dirname(__file__), "./data/stopwords_jp.txt"), "r") as f:
     STOPWORDS_JP = [line.strip() for line in f]
 STOPPOS_JP = ["形容動詞語幹", "副詞可能", "代名詞", "ナイ形容詞語幹", "特殊", "数", "接尾", "非自立"]
-with open(os.path.expanduser("~/Datasets/AWD-J/AWD-J_EX.txt"), "r") as f:
+with open(os.path.expanduser("./data/AWD-J_EX.txt"), "r") as f:
     rows = [line.strip().split("\t") for line in f]
     AWD = {word: score for word, score, _, _ in rows}
-DF_jiwc = pd.read_csv(
-    os.path.expanduser("~/Datasets/NAIST/2017-11-JIWC.csv"), index_col=1
-).drop(columns="Unnamed: 0")
+DF_jiwc = pd.read_csv(os.path.expanduser("./data/2017-11-JIWC.csv"), index_col=1).drop(
+    columns="Unnamed: 0"
+)
 
 
 def measure_sents(text: str) -> np.ndarray:
