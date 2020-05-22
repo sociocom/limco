@@ -175,4 +175,4 @@ number of words per chunk in text.
 ---
 ## References
 
-Asaishi (2007)
+- [Asaishi, 2007]: 浅石卓真. (2017). テキストの特徴を計量する指標の概観. 日本図書館情報学会誌, 63(3), 159–169. https://doi.org/10.20651/jslis.63.3_159
