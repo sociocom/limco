@@ -9,6 +9,10 @@ pytest-cov = "*"
 pytest-datadir = "*"
 
 [packages]
+fire = "*"
+natto-py = "*"
+numpy = "*"
+pandas = "*"
 
 [requires]
 python_version = "3.7"
