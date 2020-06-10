@@ -15,8 +15,8 @@ Compatible natural languages:
 ### Requirements
 
 - Python 3.6+
-  - **f-string** (PEP 536):
-  - **Type Hints** (PEP 484):
+  - f-string (PEP 536):
+  - Type Hints (PEP 484):
 - (Your kind patience)
 
 ### Dependencies
@@ -26,9 +26,9 @@ Otherwise, `pip install -r requirements.txt` will suffice.
 
 This library also depends on the following external commands for Japanese processing:
 
-- **MeCab** (for Japanese text processing):
-    - **[mecab-ipadic-neologd](https://github.com/neologd/mecab-ipadic-neologd)** (for better Japanese NER):
-- **CaboCha** (for `analyse_parseddoc.py`):
+- MeCab (for Japanese text processing):
+    - [mecab-ipadic-neologd](https://github.com/neologd/mecab-ipadic-neologd) (for better Japanese NER):
+- CaboCha (for `analyse_parseddoc.py`):
 
 ### Resources
 
@@ -46,15 +46,19 @@ Put the above in the `data/` folder.
 
 ## Usage
 
+**IMPORTANT: the user is responsible for text normalisation**
+
 ### `measure_lang.py`
 
 You can generate table data from a text file by executing:
 
 ```
-python measure_lang.py [csv/excel]
+python measure_lang.py [csv/excel file path] [target column name]
 ```
 
 When you input `your_data.csv`, `your_data.measured.csv` will be created in the same location of the input file.
+
+Recommend that the input text is formatted like one sentence per line to calculate the proper sentence count.
 
 You can also use each measure by importing like:
 
@@ -77,14 +81,35 @@ The detailed usage instruction for each measure will be available in its docstri
 (the documentation here is work-in-progress)
 
 Prepare:
-- one sentence per line
+- one sentence per line without blank lines
 - documents are split by one blank line
 
+E.g.
+```python
+import re
+import pandas as pd
+
+import split_sentence  # find a great library to split sentences
+
+col = "column_name"
+
+with open('formatted_text.txt', 'w') as f:
+    f.writelines(
+        [
+            re.sub("^$", "", re.sub("\n+", "\n", re.sub("\s", " ", t))) + "\n\n"
+            for t in df[col].to_list()
+        ]
+    )
+```
+then, execute `sentence-splitter formatted_text.txt > formatted_text-sentsplit.txt ` or something like that, where `sentence-splitter` splits input text into the sentence-per-line format while preserving blank lines (you must find a good real tool; in English, `nltk` provides one).
+
 Run:
-```
+```shell
 cabocha -f1 your_text.txt > your_text.cabocha.txt
-python analyse_parseddoc.py your_text.cabocha.txt
+python analyse_parseddoc.py your_text.cabocha.txt [your_csv.measured.csv]
 ```
+
+If you add measured csv file produced by `measure_lang.py` as the second argument, `analyse_parseddoc.py` concatenate the result column-wise (like GNU `paste(1)`, but aware of escaped multi-line text in the csv).
 
 
 ## Measures
