@@ -36,7 +36,10 @@ def measure_sents(text: str) -> np.ndarray:
     input text should be one sentence per line.
     """
     # sents = DELIM_SENT.split(text)
-    sents = text.split("\n")
+    if "\r" in text:
+        sents = text.split("\r\n")
+    else:
+        sents = text.split("\n")
     lens_char = np.array([len(sent) for sent in sents])
     return np.array(
         [
@@ -54,19 +57,19 @@ def measure_sents(text: str) -> np.ndarray:
 
 def count_conversations(text: str) -> float:
     # 会話文の割合
-    text = text.replace("\n", "")
+    text = re.sub(r"\s", " ", text)
     singles = re.findall(r"「.+?」", text)
     doubles = re.findall(r"『.+?』", text)
     lens_single = [len(single) for single in singles]
     lens_double = [len(double) for double in doubles]
-    return (sum(lens_single) + sum(lens_double)) / len(text)
+    return np.divide(sum(lens_single) + sum(lens_double), len(text))
 
 
 def count_charcat(text: str) -> np.ndarray:
-    text = text.replace("\n", "")
+    text = re.sub(r"\s", " ", text)
     c = Counter([ud.name(char).split()[0] for char in text])
     counts = np.array([c["HIRAGANA"], c["KATAKANA"], c["CJK"]])
-    return counts / len(text)
+    return np.divide(counts, len(text))
 
 
 def measure_pos(text: str) -> np.ndarray:
@@ -86,25 +89,28 @@ def measure_pos(text: str) -> np.ndarray:
     nouns = [token for token in tokens if token[1][0] == "名詞"]
     adjcs = [token for token in tokens if token[1][0] == "形容詞"]
     content_words = verbs + nouns + adjcs
-    cwr_simple = len(content_words) / len(tokens)
-    cwr_advance = len(
-        [
-            token
-            for token in content_words
-            if (token[1][1] not in STOPPOS_JP) and (token[0] not in STOPWORDS_JP)
-        ]
-    ) / len(tokens)
+    cwr_simple = np.divide(len(content_words), len(tokens))
+    cwr_advance = np.divide(
+        len(
+            [
+                token
+                for token in content_words
+                if (token[1][1] not in STOPPOS_JP) and (token[0] not in STOPWORDS_JP)
+            ]
+        ),
+        len(tokens),
+    )
 
     # NOTE: skip FUNCTION WORDS RATIO since it's equiv to 1 - CWR
 
     # Modifying words and verb ratio (MVR)
     advbs = [token for token in tokens if token[1][0] == "副詞"]
     padjs = [token for token in tokens if token[1][0] == "連体詞"]
-    mvr = len(adjcs + advbs + padjs) / len(verbs)
+    mvr = np.divide(len(adjcs + advbs + padjs), len(verbs))
 
     # NER
     ners = [token for token in tokens if token[1][1] == "固有名詞"]
-    nerr = len(ners) / len(tokens)
+    nerr = np.divide(len(ners), len(tokens))
 
     # TTR
     ttrs = calc_ttrs(tokens)
@@ -150,7 +156,10 @@ def measure_abst(text: str) -> np.ndarray:
 
 
 def detect_bunmatsu(text: str) -> float:
-    sents = text.split("\n")
+    if "\r" in text:
+        sents = text.split("\r\n")
+    else:
+        sents = text.split("\n")
 
     # 体言止め
     taigen = 0
@@ -161,7 +170,7 @@ def detect_bunmatsu(text: str) -> float:
             if not n.is_eos()
         ]
         taigen += 1 if tokens[-2][1] == "名詞" else 0
-    ratio_taigen = taigen / len(sents)
+    ratio_taigen = np.divide(taigen, len(sents))
 
     # TODO: what else?
 
@@ -177,14 +186,14 @@ def calc_ttrs(tokens: List[Tuple[str, List[str]]]) -> np.ndarray:
     # TODO: implement frequency-wise TTR variants
     return np.array(
         [
-            Vn / N,  # original plain TTR: not robust to the length
-            Vn / np.sqrt(N),  # Guiraud's R
-            logVn / logN,  # Herdan's C_H
-            logVn / np.log(logN),  # Rubet's k
-            (logN - logVn) / (logN ** 2),  # Maas's a^2
-            (1 - (Vn ** 2)) / ((Vn ** 2) * logN),  # Tuldava's LN
+            np.divide(Vn, N),  # original plain TTR: not robust to the length
+            np.divide(Vn, np.sqrt(N)),  # Guiraud's R
+            np.divide(logVn, logN),  # Herdan's C_H
+            np.divide(logVn, np.log(logN)),  # Rubet's k
+            np.divide((logN - logVn), (logN ** 2)),  # Maas's a^2
+            np.divide((1 - (Vn ** 2)), ((Vn ** 2) * logN)),  # Tuldava's LN
             np.float_power(N, np.float_power(Vn, 0.172)),  # Brunet's W
-            (logN ** 2) / (logN - logVn),  # Dugast's U
+            np.divide((logN ** 2), (logN - logVn)),  # Dugast's U
         ]
     )
 
@@ -204,22 +213,26 @@ def calc_jiwc(text: str) -> np.ndarray:
         [token[0] if token[1][6] == "*" else token[1][6] for token in tokens]
     ) & set(DF_jiwc.index)
     jiwc_vals = DF_jiwc.loc[jiwc_words].sum()
-    return jiwc_vals / jiwc_vals.sum()
+    return np.divide(jiwc_vals, jiwc_vals.sum())
     # Sad Anx Anger Hate Trustful S Happy
 
 
 def apply_all(text: str) -> Dict[str, Num]:
-    all_res = np.concatenate(
-        (
-            measure_sents(text),
-            [count_conversations(text)],
-            count_charcat(text),
-            measure_pos(text),
-            measure_abst(text),
-            [detect_bunmatsu(text)],
-            calc_jiwc(text),
+    try:
+        all_res = np.concatenate(
+            (
+                measure_sents(text),
+                [count_conversations(text)],
+                count_charcat(text),
+                measure_pos(text),
+                measure_abst(text),
+                [detect_bunmatsu(text)],
+                calc_jiwc(text),
+            )
         )
-    )
+    except:
+        print(text)
+        raise
     headers = [
         "num_sent",
         "mean_sent_len",
@@ -259,7 +272,7 @@ def apply_all(text: str) -> Dict[str, Num]:
     return dict(zip(headers, all_res))
 
 
-def apply_file(fname):
+def apply_file(fname, col):
     if fname.endswith(".csv"):
         df = pd.read_csv(fname)
     elif fname.endswith(".xls") or fname.endswith(".xlsx"):
@@ -267,15 +280,10 @@ def apply_file(fname):
     else:
         raise ValueError("Unsupported input format: please use CSV or Excel data")
 
-    assert "story_200" in df.columns
+    assert col in df.columns, f"{col} is not found in the input data"
 
     pd.concat(
-        [
-            df,
-            df.apply(
-                lambda row: apply_all(row.story_200), result_type="expand", axis=1
-            ),
-        ],
+        [df, df.apply(lambda row: apply_all(row[col]), result_type="expand", axis=1)],
         axis=1,
     ).to_csv(f"{fname}.measured.csv", index=False)
 

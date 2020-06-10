@@ -1,4 +1,5 @@
 # import numpy as np
+from typing import List
 import fire
 import pandas as pd
 
@@ -44,7 +45,7 @@ class Morph:
 
 def read_chunks(cabochafile):
     sentences = []
-    sentence = []
+    sentence: List[Chunk] = []
     for line in cabochafile:
         if line == "EOS\n":
             for i, c in enumerate(sentence[:-1]):
