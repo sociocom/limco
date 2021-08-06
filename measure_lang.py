@@ -19,6 +19,7 @@ def measure_sents(text: str) -> np.ndarray:
 
     input text should be one sentence per line.
     """
+    # sents = DELIM_SENT.split(text)
     if "\r" in text:
         sents = text.split("\r\n")
     else:
