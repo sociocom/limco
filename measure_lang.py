@@ -1,7 +1,6 @@
 from collections import Counter
-import os
 import re
-from typing import List, Tuple, Dict, Union
+from typing import Dict, Union
 import unicodedata as ud
 
 import fire
@@ -12,11 +11,12 @@ import ginza
 
 Num = Union[int, float]
 STOPPOS_JP = ["形容動詞語幹", "副詞可能", "代名詞", "ナイ形容詞語幹", "特殊", "数", "接尾", "非自立"]
-NLP = spacy.load('ja_ginza')
+NLP = spacy.load("ja_ginza")
 
 
 def measure_sents(text: str) -> np.ndarray:
     """Show descriptive stats of sentence length.
+
     input text should be one sentence per line.
     """
     if "\r" in text:
@@ -39,6 +39,7 @@ def measure_sents(text: str) -> np.ndarray:
 
 
 def count_conversations(text: str) -> float:
+    # 会話文の割合
     text = re.sub(r"\s", " ", text)
     singles = re.findall(r"「.+?」", text)
     doubles = re.findall(r"『.+?』", text)
@@ -55,18 +56,24 @@ def count_charcat(text: str) -> np.ndarray:
 
 
 def measure_pos(text: str, stopwords) -> np.ndarray:
-    doc = NLP(text.replace('一\n\n　', ''))
+    doc = NLP(text.replace("一\n\n　", ""))
     tokens = []
     for sent in doc.sents:
         for token in sent:
-            token_tag = re.split('[,-]', token.tag_) # 品詞詳細
-            token_inflection = re.split('[,-]', ginza.inflection(token))  # 活用情報
-            analysis = token_tag + token_inflection　
-            analysis.append(token.lemma_) # 基本形
+            token_tag = re.split("[,-]", token.tag_)  # 品詞詳細
+            token_infl = re.split("[,-]", ginza.inflection(token))  # 活用情報
+            analysis = token_tag + token_infl
+            analysis.append(token.lemma_)  # 基本形
             tuple_ = (token.lemma_, analysis)
             tokens.append(tuple_)
-    
+    # print(tokens)
+
+    # VERB RELATED MEASURES
     verbs = [token for token in tokens if token[1][0] == "動詞"]
+    # TODO: 助動詞との連語も含める？
+    # lens_verb = [len(verb) for verb in verbs]
+
+    # CONTENT WORDS RATIO
     nouns = [token for token in tokens if token[1][0] == "名詞"]
     adjcs = [token for token in tokens if token[1][0] == "形容詞"]
     content_words = verbs + nouns + adjcs
@@ -82,13 +89,18 @@ def measure_pos(text: str, stopwords) -> np.ndarray:
         len(tokens),
     )
 
+    # NOTE: skip FUNCTION WORDS RATIO since it's equiv to 1 - CWR
+
+    # Modifying words and verb ratio (MVR)
     advbs = [token for token in tokens if token[1][0] == "副詞"]
     padjs = [token for token in tokens if token[1][0] == "連体詞"]
     mvr = np.divide(len(adjcs + advbs + padjs), len(verbs))
-    
+
+    # NER
     ners = [token for token in tokens if token[1][1] == "固有名詞"]
     nerr = np.divide(len(ners), len(tokens))
 
+    # TTR
     ttrs = calc_ttrs(tokens)
 
     return np.concatenate(
@@ -114,32 +126,41 @@ def measure_pos(text: str, stopwords) -> np.ndarray:
 
 
 def measure_abst(text: str, awd) -> np.ndarray:
-    doc = NLP(text.replace('一\n\n　', ''))
+    doc = NLP(text.replace("一\n\n　", ""))
     tokens = [token.lemma_ for sent in doc.sents for token in sent]
+    # print(tokens)
     scores = [float(awd.get(token, 0)) for token in tokens]
+    # print(scores)
+
+    # top k=5 mean
     return np.array([np.mean(sorted(scores, reverse=True)[:5]), max(scores)])
 
 
 def detect_bunmatsu(text: str) -> float:
-    doc = NLP(text.replace('一\n\n　', ''))
+    doc = NLP(text.replace("一\n\n　", ""))
+    # 体言止め
     taigen = 0
     for sent in doc.sents:
         tokens = []
         for token in sent:
-            token_tag = re.split('[,-]', token.tag_)
+            token_tag = re.split("[,-]", token.tag_)
             tokens.append(token_tag)
-        taigen += 1 if tokens[-2][0]== "名詞" else 0
+        taigen += 1 if tokens[-2][0] == "名詞" else 0
     ratio_taigen = np.divide(taigen, len([doc.sents]))
+
+    # TODO: what else?
+
     return ratio_taigen
 
 
 def calc_ttrs(text: str) -> np.ndarray:
-    doc = NLP(text.replace('一\n\n　', ''))
+    doc = NLP(text.replace("一\n\n　", ""))
     cnt = Counter([token.lemma_ for sent in doc.sents for token in sent])
     Vn = len(cnt)
     logVn = np.log(Vn)
     N = np.sum(list(cnt.values()))
     logN = np.log(N)
+    # TODO: implement frequency-wise TTR variants
     return np.array(
         [
             np.divide(Vn, N),  # original plain TTR: not robust to the length
@@ -155,15 +176,17 @@ def calc_ttrs(text: str) -> np.ndarray:
 
 
 def calc_potentialvocab(text: str) -> float:
+    # 荒牧先生の潜在語彙量も
     raise NotImplementedError
 
 
 def calc_jiwc(text: str, df_jiwc) -> np.ndarray:
-    doc = NLP(text.replace('一\n\n　', ''))
+    doc = NLP(text.replace("一\n\n　", ""))
     tokens = [token.lemma_ for sent in doc.sents for token in sent]
     jiwc_words = set([token for token in tokens]) & set(df_jiwc.index)
     jiwc_vals = df_jiwc.loc[jiwc_words].sum()
     return np.divide(jiwc_vals, jiwc_vals.sum())
+    # Sad Anx Anger Hate Trustful S Happy
 
 
 def apply_all(text: str, stopwords, awd, df_jiwc) -> Dict[str, Num]:
@@ -179,7 +202,7 @@ def apply_all(text: str, stopwords, awd, df_jiwc) -> Dict[str, Num]:
                 calc_jiwc(text, df_jiwc),
             )
         )
-    except:
+    except ValueError:
         print(text)
         raise
     headers = [
@@ -245,14 +268,19 @@ def apply_file(fname, col, swpath=None, awdpath=None, jiwcpath=None):
         awd = {}
 
     if jiwcpath:
-        df_jiwc = pd.read_csv(jiwcpath, index_col=1).drop(
-            columns="Unnamed: 0"
-        )
+        df_jiwc = pd.read_csv(jiwcpath, index_col=1).drop(columns="Unnamed: 0")
     else:
         df_jiwc = pd.DataFrame()
 
     pd.concat(
-        [df, df.apply(lambda row: apply_all(row[col], stopwords, awd, df_jiwc), result_type="expand", axis=1)],
+        [
+            df,
+            df.apply(
+                lambda row: apply_all(row[col], stopwords, awd, df_jiwc),
+                result_type="expand",
+                axis=1,
+            ),
+        ],
         axis=1,
     ).to_csv(f"{fname}.measured.csv", index=False)
 
