@@ -1,33 +1,17 @@
 from collections import Counter
-import os
 import re
-from typing import List, Tuple, Dict, Union
+from typing import Dict, Union
 import unicodedata as ud
 
 import fire
-from natto import MeCab
 import pandas as pd
 import numpy as np
+import spacy
+import ginza
 
 Num = Union[int, float]
-
-# TODO: efficiency
-# preprocess mecab tokenisation first for library usage
-
-# TODO: make these resources assignable by the user
-# TODO: make these resources optional
-# DELIM_SENT = re.compile(r"(?:[。？！\?\!]+|[。？！\?\!]?[」』])")  # FIXME: 文じゃないカギカッコが取れちゃう
-NM = MeCab()  # NOTE: assume IPADIC
-NMN = MeCab("-d /usr/local/lib/mecab/dic/mecab-ipadic-neologd")
-with open(os.path.join(os.path.dirname(__file__), "./data/stopwords_jp.txt"), "r") as f:
-    STOPWORDS_JP = [line.strip() for line in f]
 STOPPOS_JP = ["形容動詞語幹", "副詞可能", "代名詞", "ナイ形容詞語幹", "特殊", "数", "接尾", "非自立"]
-with open(os.path.expanduser("./data/AWD-J_EX.txt"), "r") as f:
-    rows = [line.strip().split("\t") for line in f]
-    AWD = {word: score for word, score, _, _ in rows}
-DF_jiwc = pd.read_csv(os.path.expanduser("./data/2017-11-JIWC.csv"), index_col=1).drop(
-    columns="Unnamed: 0"
-)
+NLP = spacy.load("ja_ginza")
 
 
 def measure_sents(text: str) -> np.ndarray:
@@ -72,12 +56,17 @@ def count_charcat(text: str) -> np.ndarray:
     return np.divide(counts, len(text))
 
 
-def measure_pos(text: str) -> np.ndarray:
-    tokens = [
-        (n.surface, n.feature.split(","))
-        for n in NM.parse(text, as_nodes=True)
-        if not n.is_eos()
-    ]
+def measure_pos(text: str, stopwords) -> np.ndarray:
+    doc = NLP(text.replace("一\n\n　", ""))
+    tokens = []
+    for sent in doc.sents:
+        for token in sent:
+            token_tag = re.split("[,-]", token.tag_)  # 品詞詳細
+            token_infl = re.split("[,-]", ginza.inflection(token))  # 活用情報
+            analysis = token_tag + token_infl
+            analysis.append(token.lemma_)  # 基本形
+            tuple_ = (token.lemma_, analysis)
+            tokens.append(tuple_)
     # print(tokens)
 
     # VERB RELATED MEASURES
@@ -95,7 +84,7 @@ def measure_pos(text: str) -> np.ndarray:
             [
                 token
                 for token in content_words
-                if (token[1][1] not in STOPPOS_JP) and (token[0] not in STOPWORDS_JP)
+                if (token[1][1] not in STOPPOS_JP) and (token[0] not in stopwords)
             ]
         ),
         len(tokens),
@@ -137,18 +126,11 @@ def measure_pos(text: str) -> np.ndarray:
     )
 
 
-def measure_abst(text: str) -> np.ndarray:
-    # AWD uses neologd
-    tokens = [
-        (n.surface, n.feature.split(","))
-        for n in NMN.parse(text, as_nodes=True)
-        if not n.is_eos()
-    ]
+def measure_abst(text: str, awd) -> np.ndarray:
+    doc = NLP(text.replace("一\n\n　", ""))
+    tokens = [token.lemma_ for sent in doc.sents for token in sent]
     # print(tokens)
-    scores = [
-        float(AWD.get(token[0] if token[1][6] == "*" else token[1][6], 0))
-        for token in tokens
-    ]
+    scores = [float(awd.get(token, 0)) for token in tokens]
     # print(scores)
 
     # top k=5 mean
@@ -156,29 +138,25 @@ def measure_abst(text: str) -> np.ndarray:
 
 
 def detect_bunmatsu(text: str) -> float:
-    if "\r" in text:
-        sents = text.split("\r\n")
-    else:
-        sents = text.split("\n")
-
+    doc = NLP(text.replace("一\n\n　", ""))
     # 体言止め
     taigen = 0
-    for sent in sents:
-        tokens = [
-            (n.surface, n.feature.split(","))
-            for n in NM.parse(text, as_nodes=True)
-            if not n.is_eos()
-        ]
-        taigen += 1 if tokens[-2][1] == "名詞" else 0
-    ratio_taigen = np.divide(taigen, len(sents))
+    for sent in doc.sents:
+        tokens = []
+        for token in sent:
+            token_tag = re.split("[,-]", token.tag_)
+            tokens.append(token_tag)
+        taigen += 1 if tokens[-2][0] == "名詞" else 0
+    ratio_taigen = np.divide(taigen, len([doc.sents]))
 
     # TODO: what else?
 
     return ratio_taigen
 
 
-def calc_ttrs(tokens: List[Tuple[str, List[str]]]) -> np.ndarray:
-    cnt = Counter([token[1][6] for token in tokens])
+def calc_ttrs(text: str) -> np.ndarray:
+    doc = NLP(text.replace("一\n\n　", ""))
+    cnt = Counter([token.lemma_ for sent in doc.sents for token in sent])
     Vn = len(cnt)
     logVn = np.log(Vn)
     N = np.sum(list(cnt.values()))
@@ -203,34 +181,29 @@ def calc_potentialvocab(text: str) -> float:
     raise NotImplementedError
 
 
-def calc_jiwc(text: str) -> np.ndarray:
-    tokens = [
-        (n.surface, n.feature.split(","))
-        for n in NM.parse(text, as_nodes=True)
-        if not n.is_eos()
-    ]
-    jiwc_words = set(
-        [token[0] if token[1][6] == "*" else token[1][6] for token in tokens]
-    ) & set(DF_jiwc.index)
-    jiwc_vals = DF_jiwc.loc[jiwc_words].sum()
+def calc_jiwc(text: str, df_jiwc) -> np.ndarray:
+    doc = NLP(text.replace("一\n\n　", ""))
+    tokens = [token.lemma_ for sent in doc.sents for token in sent]
+    jiwc_words = set([token for token in tokens]) & set(df_jiwc.index)
+    jiwc_vals = df_jiwc.loc[jiwc_words].sum()
     return np.divide(jiwc_vals, jiwc_vals.sum())
     # Sad Anx Anger Hate Trustful S Happy
 
 
-def apply_all(text: str) -> Dict[str, Num]:
+def apply_all(text: str, stopwords, awd, df_jiwc) -> Dict[str, Num]:
     try:
         all_res = np.concatenate(
             (
                 measure_sents(text),
                 [count_conversations(text)],
                 count_charcat(text),
-                measure_pos(text),
-                measure_abst(text),
+                measure_pos(text, stopwords),
+                measure_abst(text, awd),
                 [detect_bunmatsu(text)],
-                calc_jiwc(text),
+                calc_jiwc(text, df_jiwc),
             )
         )
-    except:
+    except ValueError:
         print(text)
         raise
     headers = [
@@ -272,7 +245,7 @@ def apply_all(text: str) -> Dict[str, Num]:
     return dict(zip(headers, all_res))
 
 
-def apply_file(fname, col):
+def apply_file(fname, col, swpath=None, awdpath=None, jiwcpath=None):
     if fname.endswith(".csv"):
         df = pd.read_csv(fname)
     elif fname.endswith(".xls") or fname.endswith(".xlsx"):
@@ -282,8 +255,33 @@ def apply_file(fname, col):
 
     assert col in df.columns, f"{col} is not found in the input data"
 
+    if swpath:
+        with open(swpath, "r") as f:
+            stopwords = [line.strip() for line in f]
+    else:
+        stopwords = []
+
+    if awdpath:
+        with open(awdpath, "r") as f:
+            rows = [line.strip().split("\t") for line in f]
+            awd = {word: score for word, score, _, _ in rows}
+    else:
+        awd = {}
+
+    if jiwcpath:
+        df_jiwc = pd.read_csv(jiwcpath, index_col=1).drop(columns="Unnamed: 0")
+    else:
+        df_jiwc = pd.DataFrame()
+
     pd.concat(
-        [df, df.apply(lambda row: apply_all(row[col]), result_type="expand", axis=1)],
+        [
+            df,
+            df.apply(
+                lambda row: apply_all(row[col], stopwords, awd, df_jiwc),
+                result_type="expand",
+                axis=1,
+            ),
+        ],
         axis=1,
     ).to_csv(f"{fname}.measured.csv", index=False)
 
