@@ -1,5 +1,5 @@
 fire
-natto-py
-numpy
 pandas
-spaCy
+numpy
+spacy
+ginza
