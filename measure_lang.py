@@ -102,7 +102,7 @@ def measure_pos(text: str, stopwords) -> np.ndarray:
     nerr = np.divide(len(ners), len(tokens))
 
     # TTR
-    ttrs = calc_ttrs(tokens)
+    ttrs = calc_ttrs(text)
 
     return np.concatenate(
         (
