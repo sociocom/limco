@@ -1,251 +1,248 @@
-from collections import Counter
 import re
-from typing import Dict, Union
 import unicodedata as ud
+from collections import Counter
+from typing import Optional, Union
 
 import fire
-import pandas as pd
-import numpy as np
-import spacy
 import ginza
+import jaconv
+import numpy as np
+import pandas as pd
+import spacy
 
 Num = Union[int, float]
+
+# Regex patterns for remove_extra_spaces()
+BLOCKS_JA = "".join(
+    (
+        "\u4E00-\u9FFF",  # CJK UNIFIED IDEOGRAPHS
+        "\u3040-\u309F",  # HIRAGANA
+        "\u30A0-\u30FF",  # KATAKANA
+        "\u3000-\u303F",  # CJK SYMBOLS AND PUNCTUATION
+        "\uFF00-\uFFEF",  # HALFWIDTH AND FULLWIDTH FORMS
+    )
+)
+BLOCK_LT = "\u0000-\u007F"
+PTN_SPC_BW_JA = re.compile(f"([{BLOCKS_JA}]) +?([{BLOCKS_JA}])")
+PTN_SPC_LEFT_JA = re.compile(f"([{BLOCK_LT}]) +?([{BLOCKS_JA}])")
+PTN_SPC_RIGHT_JA = re.compile(f"([{BLOCKS_JA}]) +?([{BLOCK_LT}])")
+
 STOPPOS_JP = ["形容動詞語幹", "副詞可能", "代名詞", "ナイ形容詞語幹", "特殊", "数", "接尾", "非自立"]
+
 NLP = spacy.load("ja_ginza")
 
 
-def measure_sents(text: str) -> np.ndarray:
-    """Show descriptive stats of sentence length.
+def remove_extra_spaces(text: str) -> str:
+    # Taken from https://gist.github.com/hideaki-t/198898f44aab078ed1a1#file-normalize_neologd-py-L17
+    for ptn in [PTN_SPC_BW_JA, PTN_SPC_LEFT_JA, PTN_SPC_RIGHT_JA]:
+        text = ptn.sub(r"\1\2", text)
+    return text
 
-    input text should be one sentence per line.
+
+def normalise(text: str, preserve_newlines=False) -> str:
+    """Normalise Japanese text.
+
+    Args:
+        text (str): Japanese text to normalise.
+        preserve_newlines (bool, optional):
+            Whether to preserve newlines.
+            Enable if the input is formatted like 'sentence-per-line'
+            (e.g. when the original sentence do not end with punctuation).
+            Defaults to False.
     """
-    # sents = DELIM_SENT.split(text)
-    if "\r" in text:
-        sents = text.split("\r\n")
-    else:
-        sents = text.split("\n")
-    lens_char = np.array([len(sent) for sent in sents])
-    return np.array(
-        [
-            len(lens_char),
-            np.mean(lens_char),
-            np.std(lens_char, ddof=1),
-            np.min(lens_char),
-            np.quantile(lens_char, 0.25),
-            np.median(lens_char),
-            np.quantile(lens_char, 0.75),
-            np.max(lens_char),
-        ]
-    )
+    if not preserve_newlines:
+        text = text.replace("\r", "")
+        text = text.replace("\n", "")
+
+    # Zenkaku alphabets, numbers, and signs to Hankaku
+    # Hankaku Kana to Zenkaku
+    text = jaconv.normalize(text, "NFKC")
+
+    text = remove_extra_spaces(text)
+
+    return text
 
 
-def count_conversations(text: str) -> float:
-    # 会話文の割合
-    text = re.sub(r"\s", " ", text)
-    singles = re.findall(r"「.+?」", text)
-    doubles = re.findall(r"『.+?』", text)
-    lens_single = [len(single) for single in singles]
-    lens_double = [len(double) for double in doubles]
-    return np.divide(sum(lens_single) + sum(lens_double), len(text))
-
-
-def count_charcat(text: str) -> np.ndarray:
-    text = re.sub(r"\s", " ", text)
+def count_charcat(text: str) -> dict[str, int]:
+    """Count number of characters in each Japanese character category."""
     c = Counter([ud.name(char).split()[0] for char in text])
-    counts = np.array([c["HIRAGANA"], c["KATAKANA"], c["CJK"]])
-    return np.divide(counts, len(text))
+    return {"hiragana": c["HIRAGANA"], "katakana": c["KATAKANA"], "kanji": c["CJK"]}
 
 
-def measure_pos(text: str, stopwords) -> np.ndarray:
-    doc = NLP(text.replace("一\n\n　", ""))
-    tokens = []
+def count_conversations(text: str) -> dict[str, int]:
+    """Count number of conversations in Japanese text."""
+    return {
+        "single": len(re.findall(r"「.+?」", text)),
+        "double": len(re.findall(r"『.+?』", text)),
+    }
+
+
+def describe_sentence_lengths(doc: spacy.tokens.Doc) -> dict[str, Num]:
+    """Calculate descriptive stats of sentence lengths (char counts)."""
+    sentlens = [len(sent.text) for sent in doc.sents]
+    return {
+        "sentlen_mean": np.mean(sentlens),
+        "sentlen_std": np.std(sentlens, ddof=1),
+        "sentlen_min": np.min(sentlens),
+        "sentlen_q1": np.quantile(sentlens, 0.25),
+        "sentlen_med": np.median(sentlens),
+        "sentlen_q3": np.quantile(sentlens, 0.75),
+        "sentlen_max": np.max(sentlens),
+    }
+
+
+def measure_pos(
+    doc: spacy.tokens.Doc,
+    stopwords: list[str],
+    awd: dict[str, float],
+    jiwc: Optional[pd.DataFrame],
+) -> dict[str, Num]:
+    res = {}
+
+    all_tokens = []
+    total_tokens = 0
+    total_verbs = 0
+    total_nouns = 0
+    total_adjs = 0
+    total_advs = 0
+    total_dets = 0
     for sent in doc.sents:
         for token in sent:
-            token_tag = re.split("[,-]", token.tag_)  # 品詞詳細
-            token_infl = re.split("[,-]", ginza.inflection(token))  # 活用情報
-            analysis = token_tag + token_infl
-            analysis.append(token.lemma_)  # 基本形
-            tuple_ = (token.lemma_, analysis)
-            tokens.append(tuple_)
-    # print(tokens)
-
-    # VERB RELATED MEASURES
-    verbs = [token for token in tokens if token[1][0] == "動詞"]
-    # TODO: 助動詞との連語も含める？
-    # lens_verb = [len(verb) for verb in verbs]
+            if token.lemma_ in stopwords:
+                continue
+            all_tokens.append(token.lemma_)
+            total_tokens += 1
+            if token.pos_ == "VERB":
+                total_verbs += 1
+            elif token.pos_ == "NOUN":
+                total_nouns += 1
+            elif token.pos_ == "ADJ":
+                total_adjs += 1
+            elif token.pos_ == "ADV":
+                total_advs += 1
+            elif token.pos_ == "DET":
+                total_dets += 1
 
     # CONTENT WORDS RATIO
-    nouns = [token for token in tokens if token[1][0] == "名詞"]
-    adjcs = [token for token in tokens if token[1][0] == "形容詞"]
-    content_words = verbs + nouns + adjcs
-    cwr_simple = np.divide(len(content_words), len(tokens))
-    cwr_advance = np.divide(
-        len(
-            [
-                token
-                for token in content_words
-                if (token[1][1] not in STOPPOS_JP) and (token[0] not in stopwords)
-            ]
-        ),
-        len(tokens),
-    )
-
+    total_content_words = total_verbs + total_nouns + total_adjs
+    res["cwr"] = np.divide(total_content_words, total_tokens)
     # NOTE: skip FUNCTION WORDS RATIO since it's equiv to 1 - CWR
 
     # Modifying words and verb ratio (MVR)
-    advbs = [token for token in tokens if token[1][0] == "副詞"]
-    padjs = [token for token in tokens if token[1][0] == "連体詞"]
-    mvr = np.divide(len(adjcs + advbs + padjs), len(verbs))
+    total_modifying_words = total_adjs + total_advs + total_dets
+    res["mvr"] = np.divide(total_modifying_words, total_verbs)
 
-    # NER
-    ners = [token for token in tokens if token[1][1] == "固有名詞"]
-    nerr = np.divide(len(ners), len(tokens))
+    # Named Entity Ratio
+    res["pct_ne"] = np.divide(len(list(doc.ents)), total_tokens)
 
-    # TTR
-    ttrs = calc_ttrs(text)
+    res.update(calc_ttrs(all_tokens))
+    if awd:
+        res.update(score_abstractness(all_tokens, awd))
+    if jiwc:
+        res.update(score_jiwc(all_tokens, jiwc))
 
-    return np.concatenate(
-        (
-            np.array(
-                [
-                    # np.mean(lens_verb),
-                    # np.std(lens_verb),
-                    # np.min(lens_verb),
-                    # np.quantile(lens_verb, 0.25),
-                    # np.median(lens_verb),
-                    # np.quantile(lens_verb, 0.75),
-                    # np.max(lens_verb),
-                    cwr_simple,
-                    cwr_advance,
-                    mvr,
-                    nerr,
-                ]
-            ),
-            ttrs,
-        )
-    )
+    return res
 
 
-def measure_abst(text: str, awd) -> np.ndarray:
-    doc = NLP(text.replace("一\n\n　", ""))
-    tokens = [token.lemma_ for sent in doc.sents for token in sent]
-    # print(tokens)
-    scores = [float(awd.get(token, 0)) for token in tokens]
-    # print(scores)
-
-    # top k=5 mean
-    return np.array([np.mean(sorted(scores, reverse=True)[:5]), max(scores)])
-
-
-def detect_bunmatsu(text: str) -> float:
-    doc = NLP(text.replace("一\n\n　", ""))
-    # 体言止め
-    taigen = 0
-    for sent in doc.sents:
-        tokens = []
-        for token in sent:
-            token_tag = re.split("[,-]", token.tag_)
-            tokens.append(token_tag)
-        taigen += 1 if tokens[-2][0] == "名詞" else 0
-    ratio_taigen = np.divide(taigen, len([doc.sents]))
-
-    # TODO: what else?
-
-    return ratio_taigen
-
-
-def calc_ttrs(text: str) -> np.ndarray:
-    doc = NLP(text.replace("一\n\n　", ""))
-    cnt = Counter([token.lemma_ for sent in doc.sents for token in sent])
+def calc_ttrs(tokens: list[str]) -> dict[str, Num]:
+    cnt = Counter(tokens)
     Vn = len(cnt)
     logVn = np.log(Vn)
     N = np.sum(list(cnt.values()))
     logN = np.log(N)
     # TODO: implement frequency-wise TTR variants
-    return np.array(
-        [
-            np.divide(Vn, N),  # original plain TTR: not robust to the length
-            np.divide(Vn, np.sqrt(N)),  # Guiraud's R
-            np.divide(logVn, logN),  # Herdan's C_H
-            np.divide(logVn, np.log(logN)),  # Rubet's k
-            np.divide((logN - logVn), (logN ** 2)),  # Maas's a^2
-            np.divide((1 - (Vn ** 2)), ((Vn ** 2) * logN)),  # Tuldava's LN
-            np.float_power(N, np.float_power(Vn, 0.172)),  # Brunet's W
-            np.divide((logN ** 2), (logN - logVn)),  # Dugast's U
-        ]
+    return {
+        "ttr_orig": np.divide(Vn, N),  # original plain TTR: not robust to the length
+        "ttr_guiraud_r": np.divide(Vn, np.sqrt(N)),  # Guiraud's R
+        "ttr_herdan_ch": np.divide(logVn, logN),  # Herdan's C_H
+        "ttr_rubet_k": np.divide(logVn, np.log(logN)),  # Rubet's k
+        "ttr_maas_a2": np.divide((logN - logVn), (logN**2)),  # Maas's a^2
+        "ttr_tuldava_ln": np.divide(
+            (1 - (Vn**2)), ((Vn**2) * logN)
+        ),  # Tuldava's LN
+        "ttr_brunet_w": np.float_power(N, np.float_power(Vn, 0.172)),  # Brunet's W
+        "ttr_dugast_u": np.divide((logN**2), (logN - logVn)),  # Dugast's U
+    }
+
+
+def score_abstractness(tokens: list[str], awd: dict[str, float]) -> dict[str, float]:
+    scores = [awd.get(token, 0.0) for token in tokens]
+    return {
+        "abst_top5_mean": np.mean(sorted(scores, reverse=True)[:5]),
+        "abst_max": max(scores),
+    }
+
+
+def score_jiwc(tokens: list[str], df_jiwc: pd.DataFrame) -> dict[str, float]:
+    """calculate JIWC sentiment scores.
+
+    Sentiment scores are normalized by the sum of all scores (i.e. softmax).
+    """
+    jiwc_words = list(set(tokens) & set(df_jiwc.index))
+    jiwc_vals = df_jiwc.loc[jiwc_words].sum()
+    return (
+        (jiwc_vals / jiwc_vals.sum())
+        .rename(
+            {
+                "Sad": "jiwc_sadness",
+                "Anx": "jiwc_anxiety",
+                "Anger": "jiwc_anger",
+                "Hate": "jiwc_hatrid",
+                "Trustful": "jiwc_trust",
+                "S": "jiwc_surprise",
+                "Happy": "jiwc_happiness",
+            }
+        )
+        .to_dict()
     )
 
 
-def calc_potentialvocab(text: str) -> float:
-    # 荒牧先生の潜在語彙量も
-    raise NotImplementedError
+def count_taigendome(doc: spacy.tokens.Doc) -> int:
+    """Count Japanese 体言止め (taigen-dome) sentences in a text."""
+    pos_per_sent = [[token.pos_ for token in sent] for sent in doc.sents]
+    return sum(is_taigendome(sent) for sent in pos_per_sent)
 
 
-def calc_jiwc(text: str, df_jiwc) -> np.ndarray:
-    doc = NLP(text.replace("一\n\n　", ""))
-    tokens = [token.lemma_ for sent in doc.sents for token in sent]
-    jiwc_words = set([token for token in tokens]) & set(df_jiwc.index)
-    jiwc_vals = df_jiwc.loc[jiwc_words].sum()
-    return np.divide(jiwc_vals, jiwc_vals.sum())
-    # Sad Anx Anger Hate Trustful S Happy
+def is_taigendome(pos_list: list[str]) -> bool:
+    """Check if a sentence is 体言止め (taigen-dome)."""
+    if pos_list[-1] != "PUNCT":
+        return pos_list[-1] == "NOUN"
+    else:
+        return pos_list[-2] == "NOUN"
 
 
-def apply_all(text: str, stopwords, awd, df_jiwc) -> Dict[str, Num]:
-    try:
-        all_res = np.concatenate(
-            (
-                measure_sents(text),
-                [count_conversations(text)],
-                count_charcat(text),
-                measure_pos(text, stopwords),
-                measure_abst(text, awd),
-                [detect_bunmatsu(text)],
-                calc_jiwc(text, df_jiwc),
-            )
-        )
-    except ValueError:
-        print(text)
-        raise
-    headers = [
-        "num_sent",
-        "mean_sent_len",
-        "std_sent_len",
-        "min_sent_len",
-        "q1_sent_len",
-        "median_sent_len",
-        "q3_sent_len",
-        "max_sent_len",
-        "num_conv",
-        "pct_hiragana",
-        "pct_katakana",
-        "pct_kanji",
-        "cwr_simple",
-        "cwr_advance",
-        "mvr",
-        "pct_ner",
-        "ttr_plain",
-        "guiraud_r",
-        "herdan_ch",
-        "rubet_k",
-        "maas_a2",
-        "tuldava_ln",
-        "brunet_w",
-        "dugast_u",
-        "top5_mean_abst",
-        "max_abst",
-        "ratio_taigendome",
-        "jiwc_sadness",
-        "jiwc_anxiety",
-        "jiwc_anger",
-        "jiwc_hatrid",
-        "jiwc_trust",
-        "jiwc_surprise",
-        "jiwc_happiness",
-    ]
-    return dict(zip(headers, all_res))
+# TODO: 荒牧先生の潜在語彙量も
+# def calc_potentialvocab(text: str) -> float:
+#     raise NotImplementedError
 
 
-def apply_file(fname, col, swpath=None, awdpath=None, jiwcpath=None):
+def calculate_all(
+    text: str, stopwords: list[str], awd: dict[str, float], jiwc: Optional[pd.DataFrame]
+) -> dict[str, Num]:
+    res = {}
+    text = normalise(text)
+
+    # calculatable without spacy
+    num_chars = len(text)
+    num_charcats = count_charcat(text)
+    res["pct_hiragana"] = np.divide(num_charcats["hiragana"], num_chars)
+    res["pct_katakana"] = np.divide(num_charcats["katakana"], num_chars)
+    res["pct_kanji"] = np.divide(num_charcats["kanji"], num_chars)
+    num_convs = count_conversations(text)
+
+    # calculation requiring spacy
+    doc = NLP(text)
+
+    res["num_sents"] = len(list(doc.sents))
+    res["pct_convs"] = np.divide(num_convs, res["num_sents"])
+    res["pct_taigen"] = np.divide(count_taigendome(doc), res["num_sents"])
+    res.update(describe_sentence_lengths(doc))
+    res.update(measure_pos(doc, stopwords, awd, jiwc))
+
+    return res
+
+
+def apply_file(fname, col, sw=None, awd=None, jiwc=None) -> None:
     if fname.endswith(".csv"):
         df = pd.read_csv(fname)
     elif fname.endswith(".xls") or fname.endswith(".xlsx"):
@@ -255,29 +252,29 @@ def apply_file(fname, col, swpath=None, awdpath=None, jiwcpath=None):
 
     assert col in df.columns, f"{col} is not found in the input data"
 
-    if swpath:
-        with open(swpath, "r") as f:
+    if sw:
+        with open(sw, "r") as f:
             stopwords = [line.strip() for line in f]
     else:
         stopwords = []
 
-    if awdpath:
-        with open(awdpath, "r") as f:
+    if awd:
+        with open(awd, "r") as f:
             rows = [line.strip().split("\t") for line in f]
-            awd = {word: score for word, score, _, _ in rows}
+            awd = {word: float(score) for word, score, _, _ in rows}
     else:
         awd = {}
 
-    if jiwcpath:
-        df_jiwc = pd.read_csv(jiwcpath, index_col=1).drop(columns="Unnamed: 0")
+    if jiwc:
+        df_jiwc = pd.read_csv(jiwc, index_col=1).drop(columns="Unnamed: 0")
     else:
-        df_jiwc = pd.DataFrame()
+        df_jiwc = None
 
     pd.concat(
         [
             df,
             df.apply(
-                lambda row: apply_all(row[col], stopwords, awd, df_jiwc),
+                lambda row: calculate_all(row[col], stopwords, awd, df_jiwc),
                 result_type="expand",
                 axis=1,
             ),
