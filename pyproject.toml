@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "limco"
+version = "2.0.0"
+description = "Linguistic Measure Collection"
+authors = ["Shuntaro Yada <contact@shuntaroy.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+ginza = "^5.1.2"
+ja-ginza = "^5.1.2"
+pandas = "^1.5.3"
+numpy = "^1.24.2"
+fire = "^0.5.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.2.2"
+jupyter = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
