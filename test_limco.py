@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-import measure_lang as ml
+import limco
 
 TEXT = """ここは駅から程よい距離にある日本の住宅街である。
 「びっくり！」
@@ -11,27 +11,27 @@ TEXT = """ここは駅から程よい距離にある日本の住宅街である�
 しかも、街の北にある中学校でさえも2クラスになろうとしている。『結構小さい街なんだね。』
 だが、いつもこの街にあるスーパーで毎年行われる納涼祭はとても盛り上がり、この街だけではおさまらず、他のところから来ている人も多数いる。
 """
-DOC = ml.NLP(ml.normalise(TEXT))
+DOC = limco.NLP(limco.normalise(TEXT))
 
 
 def test_count_charcat():
     text = "あれとコレと竜巻．"
-    assert ml.count_charcat(text) == {"hiragana": 4, "katakana": 2, "kanji": 2}
+    assert limco.count_charcat(text) == {"hiragana": 4, "katakana": 2, "kanji": 2}
 
 
 def test_count_conversations():
-    assert ml.count_conversations(TEXT) == {"single": 1, "double": 1}
+    assert limco.count_conversations(TEXT) == {"single": 1, "double": 1}
 
 
 def test_describe_sentence_lengths():
-    assert list(ml.describe_sentence_lengths(DOC).values()) == pytest.approx(
+    assert list(limco.describe_sentence_lengths(DOC).values()) == pytest.approx(
         [31.857143, 21.341888, 7.0, 18.5, 28.0, 42.0, 67.0]
     )
 
 
 def test_calc_ttrs():
     # FIXME: 数式との一致を確認する
-    assert ml.calc_ttrs(
+    assert limco.calc_ttrs(
         ["今日", "明日", "月曜日", "明るい", "明るい", "今日"]
     ).values() == pytest.approx(
         [
@@ -57,7 +57,7 @@ def test_score_abstractness():
         "納涼祭": 1.0,
     }
     assert list(
-        ml.score_abstractness(list(awd.keys()) + ["明日", "今日"], awd).values()
+        limco.score_abstractness(list(awd.keys()) + ["明日", "今日"], awd).values()
     ) == pytest.approx([2.64, 5.0])
 
 
@@ -70,11 +70,11 @@ def test_score_jiwc():
         ],
         columns=["word", "Sad", "Anx", "Anger", "hate", "Trustful", "S", "Happy"],
     ).set_index("word")
-    res = list(ml.score_jiwc(["明日", "感謝", "大きい"], df_jiwc).values())
+    res = list(limco.score_jiwc(["明日", "感謝", "大きい"], df_jiwc).values())
     assert res == pytest.approx(
         [0.04784689, 0.0, 0.0, 0.09569377, 0.526316, 0.0, 0.3301435]
     )
 
 
 def test_count_taigendome():
-    assert ml.count_taigendome(DOC) == 1
+    assert limco.count_taigendome(DOC) == 1
