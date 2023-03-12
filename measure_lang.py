@@ -216,6 +216,63 @@ def is_taigendome(pos_list: list[str]) -> bool:
 #     raise NotImplementedError
 
 
+def describe_max_sent_depths(doc: spacy.tokens.Doc) -> dict[str, float]:
+    """Describe the maximum depths of the sentences."""
+    max_depths = [count_max_sent_depth(sent) for sent in doc.sents]
+    return {
+        "sentdepths_mean": np.mean(max_depths),
+        "sentdepths_std": np.std(max_depths, ddof=1),
+        "sentdepths_min": np.min(max_depths),
+        "sentdepths_q1": np.quantile(max_depths, 0.25),
+        "sentdepths_med": np.median(max_depths),
+        "sentdepths_q3": np.quantile(max_depths, 0.75),
+        "sentdepths_max": np.max(max_depths),
+    }
+
+
+def count_max_sent_depth(sent: spacy.tokens.Span) -> int:
+    """Count the maximum number of depth of the sentence."""
+    deps = {token.i: token.head.i for token in sent}
+    depths = {i: _count_depth(0, sent.root.i, deps) for i in deps}
+    return max(depths.values())
+
+
+def _count_depth(mem: int, tgt: int, deps: dict[int, int]) -> int:
+    """A helper to count the maximum number of depth of the sentence."""
+    if deps[tgt] == tgt:
+        return mem
+    else:
+        return 1 + _count_depth(mem, deps[tgt], deps)
+
+
+def describe_sent_chunks(doc: spacy.tokens.Doc) -> dict[str, float]:
+    """Describe the number of chunks per sentence."""
+    num_chunks = [len(list(ginza.bunsetu_spans(sent))) for sent in doc.sents]
+    return {
+        "sentchunks_mean": np.mean(num_chunks),
+        "sentchunks_std": np.std(num_chunks, ddof=1),
+        "sentchunks_min": np.min(num_chunks),
+        "sentchunks_q1": np.quantile(num_chunks, 0.25),
+        "sentchunks_med": np.median(num_chunks),
+        "sentchunks_q3": np.quantile(num_chunks, 0.75),
+        "sentchunks_max": np.max(num_chunks),
+    }
+
+
+def describe_chunk_tokens(doc: spacy.tokens.Doc) -> dict[str, float]:
+    """Describe the number of tokens per chunk."""
+    num_tokens = [len(span) for sent in doc.sents for span in ginza.bunsetu_spans(sent)]
+    return {
+        "chunktokens_mean": np.mean(num_tokens),
+        "chunktokens_std": np.std(num_tokens, ddof=1),
+        "chunktokens_min": np.min(num_tokens),
+        "chunktokens_q1": np.quantile(num_tokens, 0.25),
+        "chunktokens_med": np.median(num_tokens),
+        "chunktokens_q3": np.quantile(num_tokens, 0.75),
+        "chunktokens_max": np.max(num_tokens),
+    }
+
+
 def calculate_all(
     text: str, stopwords: list[str], awd: dict[str, float], jiwc: Optional[pd.DataFrame]
 ) -> dict[str, Num]:
@@ -238,6 +295,11 @@ def calculate_all(
     res["pct_taigen"] = np.divide(count_taigendome(doc), res["num_sents"])
     res.update(describe_sentence_lengths(doc))
     res.update(measure_pos(doc, stopwords, awd, jiwc))
+
+    # 文節 processing
+    res.update(describe_max_sent_depths(doc))
+    res.update(describe_sent_chunks(doc))
+    res.update(describe_chunk_tokens(doc))
 
     return res
 
