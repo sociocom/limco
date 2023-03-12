@@ -9,6 +9,7 @@ import jaconv
 import numpy as np
 import pandas as pd
 import spacy
+from tqdm import tqdm
 
 Num = Union[int, float]
 
@@ -26,8 +27,6 @@ BLOCK_LT = "\u0000-\u007F"
 PTN_SPC_BW_JA = re.compile(f"([{BLOCKS_JA}]) +?([{BLOCKS_JA}])")
 PTN_SPC_LEFT_JA = re.compile(f"([{BLOCK_LT}]) +?([{BLOCKS_JA}])")
 PTN_SPC_RIGHT_JA = re.compile(f"([{BLOCKS_JA}]) +?([{BLOCK_LT}])")
-
-STOPPOS_JP = ["形容動詞語幹", "副詞可能", "代名詞", "ナイ形容詞語幹", "特殊", "数", "接尾", "非自立"]
 
 NLP = spacy.load("ja_ginza")
 
@@ -205,6 +204,9 @@ def count_taigendome(doc: spacy.tokens.Doc) -> int:
 
 def is_taigendome(pos_list: list[str]) -> bool:
     """Check if a sentence is 体言止め (taigen-dome)."""
+    if len(pos_list) < 2:
+        return False
+
     if pos_list[-1] != "PUNCT":
         return pos_list[-1] == "NOUN"
     else:
@@ -233,7 +235,7 @@ def describe_max_sent_depths(doc: spacy.tokens.Doc) -> dict[str, float]:
 def count_max_sent_depth(sent: spacy.tokens.Span) -> int:
     """Count the maximum number of depth of the sentence."""
     deps = {token.i: token.head.i for token in sent}
-    depths = {i: _count_depth(0, sent.root.i, deps) for i in deps}
+    depths = {i: _count_depth(0, i, deps) for i in deps}
     return max(depths.values())
 
 
@@ -291,7 +293,7 @@ def calculate_all(
     doc = NLP(text)
 
     res["num_sents"] = len(list(doc.sents))
-    res["pct_convs"] = np.divide(num_convs, res["num_sents"])
+    res["pct_convs"] = np.divide(sum(num_convs.values()), res["num_sents"])
     res["pct_taigen"] = np.divide(count_taigendome(doc), res["num_sents"])
     res.update(describe_sentence_lengths(doc))
     res.update(measure_pos(doc, stopwords, awd, jiwc))
@@ -332,17 +334,16 @@ def apply_file(fname, col, sw=None, awd=None, jiwc=None) -> None:
     else:
         df_jiwc = None
 
-    pd.concat(
-        [
-            df,
-            df.apply(
-                lambda row: calculate_all(row[col], stopwords, awd, df_jiwc),
-                result_type="expand",
-                axis=1,
-            ),
-        ],
+    tqdm.pandas(total=len(df))
+    df_limco = df.progress_apply(
+        lambda row: calculate_all(row[col], stopwords, awd, df_jiwc),
+        result_type="expand",
         axis=1,
-    ).to_csv(f"{fname}.measured.csv", index=False)
+    )
+    pd.concat(
+        [df, df_limco],
+        axis=1,
+    ).to_csv(f"{fname}.limco.csv", index=False)
 
 
 if __name__ == "__main__":

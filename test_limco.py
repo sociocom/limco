@@ -14,6 +14,10 @@ TEXT = """ここは駅から程よい距離にある日本の住宅街である�
 DOC = limco.NLP(limco.normalise(TEXT))
 
 
+def test_normalise():
+    assert limco.normalise("ｱａｂｃ１ ナ〜レ　ドル mac spec") == "アabc1ナーレドルmac spec"
+
+
 def test_count_charcat():
     text = "あれとコレと竜巻．"
     assert limco.count_charcat(text) == {"hiragana": 4, "katakana": 2, "kanji": 2}
@@ -77,4 +81,5 @@ def test_score_jiwc():
 
 
 def test_count_taigendome():
-    assert limco.count_taigendome(DOC) == 1
+    doc = limco.NLP("一寸先は闇。それでも前に進め。")
+    assert limco.count_taigendome(doc) == 1
