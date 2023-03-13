@@ -140,3 +140,4 @@ The following linguistic measures are implemented. / 次の言語指標が実装
 ## Developer
 
 - [Shuntaro Yada](https://shuntaroy.com)
+- Itaru Ota
