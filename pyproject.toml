@@ -5,6 +5,11 @@ description = "Linguistic Measure Collection"
 authors = ["Shuntaro Yada <contact@shuntaroy.com>"]
 license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/sociocom/limco"
+classifiers = [
+    "Topic :: Text Processing :: Linguistic",
+    "Natural Language :: Japanese"
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"

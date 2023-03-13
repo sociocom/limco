@@ -375,6 +375,7 @@ def from_file(
 def main():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        # Surpress warnings mainly from numpy for CLI
         fire.Fire(from_file)
 
 
