@@ -19,6 +19,9 @@ jaconv = "^0.3.4"
 pytest = "^7.2.2"
 jupyter = "^1.0.0"
 
+[tool.poetry.scripts]
+limco = "limco:main"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

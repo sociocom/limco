@@ -306,15 +306,46 @@ def calculate_all(
     return res
 
 
-def apply_file(fname, col, sw=None, awd=None, jiwc=None) -> None:
+def from_df(
+    df: pd.DataFrame,
+    col: str,
+    stopwords: Optional[list[str]] = None,
+    awds: Optional[dict[str, float]] = None,
+    df_jiwc: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    assert col in df.columns, f"{col} is not found in the input data"
+
+    tqdm.pandas(total=len(df))
+    return df.progress_apply(
+        lambda row: calculate_all(row[col], stopwords, awds, df_jiwc),
+        result_type="expand",
+        axis=1,
+    )
+
+
+def from_file(
+    fname: str, col: str, sw: str = None, awd: str = None, jiwc: str = None
+) -> None:
+    """Linguistic Measure Collection
+
+    Calculate all linguistic measures for each text in the given file and write the results to an extended CSV file named `<input_file_path>.limco.csv`.
+
+    Args:
+        fname (str): File path to the input file. CSV and Excel files are supported.
+        col (str): Column name of the text to be analysed.
+        sw (str, optional): Path to stopwords, where words should be listed one per line. Defaults to None.
+        awd (str, optional): Path to Abstruct Word Dictionary published by SocioCom. Defaults to None.
+        jiwc (str, optional): Path to JIWC published by SocioCom. Defaults to None.
+
+    Raises:
+        ValueError: arise when you specify an unsupported file format.
+    """
     if fname.endswith(".csv"):
         df = pd.read_csv(fname)
     elif fname.endswith(".xls") or fname.endswith(".xlsx"):
         df = pd.read_excel(fname)
     else:
         raise ValueError("Unsupported input format: please use CSV or Excel data")
-
-    assert col in df.columns, f"{col} is not found in the input data"
 
     if sw:
         with open(sw, "r") as f:
@@ -325,26 +356,26 @@ def apply_file(fname, col, sw=None, awd=None, jiwc=None) -> None:
     if awd:
         with open(awd, "r") as f:
             rows = [line.strip().split("\t") for line in f]
-            awd = {word: float(score) for word, score, _, _ in rows}
+            awds = {word: float(score) for word, score, _, _ in rows}
     else:
-        awd = {}
+        awds = {}
 
     if jiwc:
         df_jiwc = pd.read_csv(jiwc, index_col=1).drop(columns="Unnamed: 0")
     else:
         df_jiwc = None
 
-    tqdm.pandas(total=len(df))
-    df_limco = df.progress_apply(
-        lambda row: calculate_all(row[col], stopwords, awd, df_jiwc),
-        result_type="expand",
-        axis=1,
-    )
+    df_limco = from_df(df, col, stopwords, awds, df_jiwc)
+
     pd.concat(
         [df, df_limco],
         axis=1,
     ).to_csv(f"{fname}.limco.csv", index=False)
 
 
+def main():
+    fire.Fire(from_file)
+
+
 if __name__ == "__main__":
-    fire.Fire(apply_file)
+    main()
