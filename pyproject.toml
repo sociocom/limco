@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "limco"
+version = "2.0.0"
+description = "Linguistic Measure Collection"
+authors = ["Shuntaro Yada <contact@shuntaroy.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/sociocom/limco"
+classifiers = [
+    "Topic :: Text Processing :: Linguistic",
+    "Natural Language :: Japanese"
+]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+ginza = "^5.1.2"
+ja-ginza = "^5.1.2"
+pandas = "^1.5.3"
+numpy = "^1.24.2"
+fire = "^0.5.0"
+jaconv = "^0.3.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.2.2"
+jupyter = "^1.0.0"
+
+[tool.poetry.scripts]
+limco = "limco:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
