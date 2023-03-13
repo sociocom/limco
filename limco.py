@@ -1,5 +1,6 @@
 import re
 import unicodedata as ud
+import warnings
 from collections import Counter
 from typing import Optional, Union
 
@@ -137,7 +138,7 @@ def measure_pos(
     res.update(calc_ttrs(all_tokens))
     if awd:
         res.update(score_abstractness(all_tokens, awd))
-    if jiwc:
+    if jiwc is not None:
         res.update(score_jiwc(all_tokens, jiwc))
 
     return res
@@ -164,12 +165,15 @@ def calc_ttrs(tokens: list[str]) -> dict[str, Num]:
     }
 
 
-def score_abstractness(tokens: list[str], awd: dict[str, float]) -> dict[str, float]:
-    scores = [awd.get(token, 0.0) for token in tokens]
-    return {
-        "abst_top5_mean": np.mean(sorted(scores, reverse=True)[:5]),
-        "abst_max": max(scores),
-    }
+def score_abstractness(tokens: list[str], awds: dict[str, float]) -> dict[str, float]:
+    scores = [awds[token] for token in tokens if token in awds]
+    if scores:
+        return {
+            "abst_top5_mean": np.mean(sorted(scores, reverse=True)[:5]),
+            "abst_max": max(scores),
+        }
+    else:
+        return {"abst_top5_mean": np.nan, "abst_max": np.nan}
 
 
 def score_jiwc(tokens: list[str], df_jiwc: pd.DataFrame) -> dict[str, float]:
@@ -179,21 +183,7 @@ def score_jiwc(tokens: list[str], df_jiwc: pd.DataFrame) -> dict[str, float]:
     """
     jiwc_words = list(set(tokens) & set(df_jiwc.index))
     jiwc_vals = df_jiwc.loc[jiwc_words].sum()
-    return (
-        (jiwc_vals / jiwc_vals.sum())
-        .rename(
-            {
-                "Sad": "jiwc_sadness",
-                "Anx": "jiwc_anxiety",
-                "Anger": "jiwc_anger",
-                "Hate": "jiwc_hatrid",
-                "Trustful": "jiwc_trust",
-                "S": "jiwc_surprise",
-                "Happy": "jiwc_happiness",
-            }
-        )
-        .to_dict()
-    )
+    return (jiwc_vals / jiwc_vals.sum()).to_dict()
 
 
 def count_taigendome(doc: spacy.tokens.Doc) -> int:
@@ -355,13 +345,22 @@ def from_file(
 
     if awd:
         with open(awd, "r") as f:
+            #  AWD TSV format: word, score, deviation, pos
             rows = [line.strip().split("\t") for line in f]
+            rows.pop(0)  # remove header
             awds = {word: float(score) for word, score, _, _ in rows}
     else:
         awds = {}
 
     if jiwc:
-        df_jiwc = pd.read_csv(jiwc, index_col=1).drop(columns="Unnamed: 0")
+        df_jiwc = (
+            pd.read_csv(jiwc)
+            .set_index("Words")
+            .rename(
+                columns=lambda x: "jiwc_" + x.lower(),
+            )
+        )
+
     else:
         df_jiwc = None
 
@@ -374,7 +373,9 @@ def from_file(
 
 
 def main():
-    fire.Fire(from_file)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fire.Fire(from_file)
 
 
 if __name__ == "__main__":

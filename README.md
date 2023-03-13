@@ -39,8 +39,8 @@ Specify the paths to the resources with the following options.
 次のオプションでリソースへのパスを指定してください。
 
 - `--sw`: Japanese stopwords (1 行 1 単語＝原形の形式のテキストファイル)
-- `--awd`: [日本語抽象度辞書 AWD-J](https://sociocom.naist.jp/awd-j/)
-- `--jiwc`: [日本語感情表現辞書 JIWC](https://sociocom.naist.jp/jiwc-dictionary/)
+- `--awd`: [日本語抽象度辞書 AWD-J](https://sociocom.naist.jp/awd-j/) `-EX` データを使用してください (e.g. [`AWD-J_EX.txt`](http://sociocom.jp/~data/2019-AWD-J/data/AWD-J_EX.txt))
+- `--jiwc`: [日本語感情表現辞書 JIWC](https://sociocom.naist.jp/jiwc-dictionary/) `-A` データを使用してください (e.g. [`JIWC-A_2019.csv`](https://github.com/sociocom/JIWC-Dictionary/blob/master/ver_2019/JIWC-A_2019.csv))
 
 ## Linguistic Measures / 言語指標
 
