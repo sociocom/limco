@@ -1,5 +1,7 @@
 # limco: LInguistic Measure COllection
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1oUqp5qnElqK5p0gPqpKFyylMk5gEZRZk?usp=sharing]
+
 A collection of the stylometric measures for authorship detection that are suggested to have relationships to the attitudes and psychological tendencies of authors.
 This library can calculate 12 types of stylometrics, based on Japanese text metrics organised in [Asaishi (2017)](https://doi.org/10.20651/jslis.63.3_159).
 
