@@ -1,7 +1,5 @@
 # limco: LInguistic Measure COllection
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1oUqp5qnElqK5p0gPqpKFyylMk5gEZRZk?usp=sharing]
-
 A collection of the stylometric measures for authorship detection that are suggested to have relationships to the attitudes and psychological tendencies of authors.
 This library can calculate 12 types of stylometrics, based on Japanese text metrics organised in [Asaishi (2017)](https://doi.org/10.20651/jslis.63.3_159).
 
@@ -31,7 +29,15 @@ pip install limco
 
 ## Usage / 使い方
 
+Google Colab で limco を試せるテンプレートがありますのでぜひお試しください．
+
+<a href="https://colab.research.google.com/drive/1oUqp5qnElqK5p0gPqpKFyylMk5gEZRZk?usp=sharing">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
 Specify the path to the CSV or Excel file and the column name of the text to be analysed.
+
+解析したいテキストが列として含まれるCSV/Excelファイルのパスを，テキストの列名とともに `limco` コマンドに渡してください．
 
 ```shell
 limco path/to/file.csv text
