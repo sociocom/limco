@@ -305,9 +305,13 @@ def from_df(
 ) -> pd.DataFrame:
     assert col in df.columns, f"{col} is not found in the input data"
 
+    effective_stopwords = stopwords if stopwords is not None else []
+    effective_awds = awds if awds is not None else {}
+    # df_jiwc can be None, calculate_all and measure_pos handle it.
+
     tqdm.pandas(total=len(df))
     return df.progress_apply(
-        lambda row: calculate_all(row[col], stopwords, awds, df_jiwc),
+        lambda row: calculate_all(row[col], effective_stopwords, effective_awds, df_jiwc),
         result_type="expand",
         axis=1,
     )
